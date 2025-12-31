@@ -1,24 +1,89 @@
 <!DOCTYPE html>
-<html>
+<html lang="fa">
 <head>
-  <meta charset="UTF-8">
-  <title>Video Call</title>
-  <style>
-    body { font-family: sans-serif; text-align: center; background: #111; color: #fff; }
-    video { width: 45%; margin: 5px; background: black; }
-    button { padding: 10px 20px; margin: 10px; font-size: 16px; }
-  </style>
+<meta charset="UTF-8">
+<title>Video Call</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont;
+    background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+    color: #fff;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    text-align: center;
+    padding: 12px;
+    font-size: 18px;
+    font-weight: bold;
+    background: rgba(0,0,0,0.3);
+  }
+
+  .videos {
+    flex: 1;
+    display: flex;
+    gap: 10px;
+    padding: 10px;
+  }
+
+  video {
+    width: 50%;
+    border-radius: 16px;
+    background: #000;
+    object-fit: cover;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+  }
+
+  .controls {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    padding: 15px;
+    background: rgba(0,0,0,0.4);
+  }
+
+  button {
+    border: none;
+    border-radius: 50px;
+    padding: 14px 26px;
+    font-size: 16px;
+    color: white;
+    cursor: pointer;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+    transition: transform 0.2s, opacity 0.2s;
+  }
+
+  button:hover { transform: scale(1.05); opacity: 0.9; }
+
+  .start { background: #00c853; }
+  .join { background: #2979ff; }
+
+  @media (max-width: 768px) {
+    .videos { flex-direction: column; }
+    video { width: 100%; height: 50%; }
+  }
+</style>
 </head>
+
 <body>
 
-<h2>تماس تصویری دوطرفه</h2>
+<header>📹 تماس تصویری آنلاین</header>
 
-<video id="localVideo" autoplay muted playsinline></video>
-<video id="remoteVideo" autoplay playsinline></video>
+<div class="videos">
+  <video id="localVideo" autoplay muted playsinline></video>
+  <video id="remoteVideo" autoplay playsinline></video>
+</div>
 
-<br>
-<button onclick="startCall()">شروع تماس</button>
-<button onclick="joinCall()">پیوستن</button>
+<div class="controls">
+  <button class="start" onclick="startCall()">شروع تماس</button>
+  <button class="join" onclick="joinCall()">پیوستن</button>
+</div>
 
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
@@ -35,6 +100,54 @@
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
   });
 
+  const localVideo = document.getElementById("localVideo");
+  const remoteVideo = document.getElementById("remoteVideo");
+
+  navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+    .then(stream => {
+      localVideo.srcObject = stream;
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+    });
+
+  pc.ontrack = e => remoteVideo.srcObject = e.streams[0];
+
+  pc.onicecandidate = e => {
+    if (e.candidate) {
+      db.ref("candidates").push(JSON.stringify(e.candidate));
+    }
+  };
+
+  db.ref("candidates").on("child_added", snap => {
+    pc.addIceCandidate(new RTCIceCandidate(JSON.parse(snap.val())));
+  });
+
+  async function startCall() {
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    db.ref("offer").set(JSON.stringify(offer));
+  }
+
+  async function joinCall() {
+    db.ref("offer").once("value", async snap => {
+      if (!snap.val()) return alert("تماسی وجود ندارد");
+      const offer = JSON.parse(snap.val());
+      await pc.setRemoteDescription(offer);
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      db.ref("answer").set(JSON.stringify(answer));
+    });
+  }
+
+  db.ref("answer").on("value", async snap => {
+    if (snap.val()) {
+      const answer = JSON.parse(snap.val());
+      await pc.setRemoteDescription(answer);
+    }
+  });
+</script>
+
+</body>
+</html>
   const localVideo = document.getElementById("localVideo");
   const remoteVideo = document.getElementById("remoteVideo");
 
