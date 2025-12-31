@@ -3,61 +3,82 @@
 <head>
   <meta charset="UTF-8">
   <title>Video Call</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; background: #111; color: #fff; }
+    video { width: 45%; margin: 5px; background: black; }
+    button { padding: 10px 20px; margin: 10px; font-size: 16px; }
+  </style>
 </head>
 <body>
-<h2>📹 تماس تصویری</h2>
 
-<video id="local" autoplay muted playsinline style="width:45%"></video>
-<video id="remote" autoplay playsinline style="width:45%"></video>
-<br><br>
+<h2>تماس تصویری دوطرفه</h2>
 
-<button onclick="start(true)">Start Call</button>
-<button onclick="start(false)">Join Call</button>
+<video id="localVideo" autoplay muted playsinline></video>
+<video id="remoteVideo" autoplay playsinline></video>
 
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<br>
+<button onclick="startCall()">شروع تماس</button>
+<button onclick="joinCall()">پیوستن</button>
+
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
 
 <script>
-const firebaseConfig = {
-  databaseURL: "https://video-call-2ecce-default-rtdb.firebaseio.com"
-};
+  const firebaseConfig = {
+    databaseURL: "https://video-call-2ecce-default-rtdb.firebaseio.com"
+  };
 
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
 
-let pc;
-const config = {
-  iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-};
+  const pc = new RTCPeerConnection({
+    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+  });
 
-async function start(isCaller) {
-  pc = new RTCPeerConnection(config);
+  const localVideo = document.getElementById("localVideo");
+  const remoteVideo = document.getElementById("remoteVideo");
 
-  const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-  document.getElementById("local").srcObject = stream;
-  stream.getTracks().forEach(t => pc.addTrack(t, stream));
+  navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+    .then(stream => {
+      localVideo.srcObject = stream;
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+    });
 
-  pc.ontrack = e => document.getElementById("remote").srcObject = e.streams[0];
-  pc.onicecandidate = e => e.candidate && db.ref("candidates").push(JSON.stringify(e.candidate));
+  pc.ontrack = e => remoteVideo.srcObject = e.streams[0];
 
-  if (isCaller) {
+  pc.onicecandidate = e => {
+    if (e.candidate) {
+      db.ref("candidates").push(JSON.stringify(e.candidate));
+    }
+  };
+
+  db.ref("candidates").on("child_added", snap => {
+    pc.addIceCandidate(new RTCIceCandidate(JSON.parse(snap.val())));
+  });
+
+  async function startCall() {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     db.ref("offer").set(JSON.stringify(offer));
-  } else {
-    db.ref("offer").on("value", async s => {
-      if (s.val()) {
-        await pc.setRemoteDescription(JSON.parse(s.val()));
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        db.ref("answer").set(JSON.stringify(answer));
-      }
+  }
+
+  async function joinCall() {
+    db.ref("offer").once("value", async snap => {
+      const offer = JSON.parse(snap.val());
+      await pc.setRemoteDescription(offer);
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      db.ref("answer").set(JSON.stringify(answer));
     });
   }
 
-  db.ref("answer").on("value", s => s.val() && pc.setRemoteDescription(JSON.parse(s.val())));
-  db.ref("candidates").on("child_added", s => pc.addIceCandidate(JSON.parse(s.val())));
-}
+  db.ref("answer").on("value", async snap => {
+    if (snap.val()) {
+      const answer = JSON.parse(snap.val());
+      await pc.setRemoteDescription(answer);
+    }
+  });
 </script>
+
 </body>
 </html>
