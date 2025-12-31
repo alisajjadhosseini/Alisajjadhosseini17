@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Receiver</title>
+</head>
+<body>
+<h2>Receiver</h2>
+<video id="remote" autoplay></video>
+<textarea id="answer" placeholder="Paste Offer here"></textarea><br>
+<button onclick="createAnswer()">Create Answer</button>
+
+<script>
+const pc = new RTCPeerConnection();
+const video = document.getElementById("remote");
+
+pc.ontrack=e=>video.srcObject=e.streams[0];
+
+navigator.mediaDevices.getUserMedia({video:true,audio:true})
+.then(stream=>{
+  stream.getTracks().forEach(t=>pc.addTrack(t,stream));
+});
+
+function createAnswer(){
+  const offer=JSON.parse(document.getElementById("answer").value);
+  pc.setRemoteDescription(offer);
+  pc.createAnswer().then(a=>{
+    pc.setLocalDescription(a);
+    document.getElementById("answer").value=
+      JSON.stringify(pc.localDescription);
+  });
+}
+</script>
+</body>
+</html>
